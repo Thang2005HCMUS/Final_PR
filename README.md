@@ -80,7 +80,20 @@ config.interpolation_type = 3    # Sử dụng thuật toán Bicubic để resiz
 
 ```
 ---
+### Citation
 
+```
+@article{DBLP:journals/ivc/ChettaouiDB25,
+  author       = {Tahar Chettaoui and
+                  Naser Damer and
+                  Fadi Boutros},
+  title        = {FRoundation: Are foundation models ready for face recognition?},
+  journal      = {Image Vis. Comput.},
+  volume       = {156},
+  pages        = {105453},
+  year         = {2025}
+}
+```
 ## License
 
 This project is licensed under the terms of the **Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.  
