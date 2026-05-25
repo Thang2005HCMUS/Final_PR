@@ -16,6 +16,12 @@ from utils.logging import init_logging
 from utils.evaluation import evaluate
 
 # =====================================================================
+# CẤU HÌNH TIẾP TỤC CHẠY (CHECKPOINT CONFIG)
+# =====================================================================
+CONTINUE = True  # True: Chạy tiếp từ checkpoint cũ; False: Chạy lại từ đầu (Ghi đè file checkpoint)
+CHECKPOINT_FILE = "checkpoint/eval_last_checkpoint.txt"
+
+# =====================================================================
 # CẤU HÌNH DANH SÁCH DATASETS TRÊN MÁY CỦA BẠN
 # =====================================================================
 DATASETS = {
@@ -32,36 +38,28 @@ DATASETS = {
 # =====================================================================
 MODELS_TO_EVAL = {
     # --- 1. BASELINE MODELS (Mô hình huấn luyện từ đầu - Tiêu chuẩn) ---
-    # Baseline - Small (Sử dụng cấu hình backbone: small)
     "Baseline_Small_CASIA-WebFace": "weights/Baseline/Small/Baseline_Small_CASIA-WebFace.pth",
     "Baseline_Small_MS1MV2": "weights/Baseline/Small/Baseline_Small_MS1MV2.pth",
     "Baseline_Small_WebFace4M": "weights/Baseline/Small/Baseline_Small_WebFace4M.pth",
     
-    # Baseline - Large (Sử dụng cấu hình backbone: large)
     # "Baseline_Large_CASIA-WebFace": "weights/Baseline/Large/Baseline_Large_CASIA-WebFace.pth",
     # "Baseline_Large_MS1MV2": "weights/Baseline/Large/Baseline_Large_MS1MV2.pth",
     # "Baseline_Large_WebFace4M": "weights/Baseline/Large/Baseline_Large_WebFace4M.pth",
 
-
-    # --- 2. CLIP BASED MODELS (Mô hình dựa trên Foundation Model CLIP) ---
-    # CLIP - Base (Sử dụng cấu hình backbone: ViT-B/16)
+    # --- 2. CLIP BASED MODELS ---
     # "CLIP_Base_CASIA-WebFace": "weights/CLIP/Base/CLIP_Base_CASIA-WebFace.pth",
     # "CLIP_Base_MS1MV2": "weights/CLIP/Base/CLIP_Base_MS1MV2.pth",
     # "CLIP_Base_WebFace4M": "weights/CLIP/Base/CLIP_Base_WebFace4M.pth",
     
-    # CLIP - Large (Sử dụng cấu hình backbone: ViT-L/14)
     # "CLIP_Large_CASIA-WebFace": "weights/CLIP/Large/CLIP_Large_CASIA-WebFace.pth",
     # "CLIP_Large_MS1MV2": "weights/CLIP/Large/CLIP_Large_MS1MV2.pth",
     # "CLIP_Large_WebFace4M": "weights/CLIP/Large/CLIP_Large_WebFace4M.pth",
 
-
-    # --- 3. DINOv2 BASED MODELS (Mô hình dựa trên Foundation Model DINOv2) ---
-    # DINOv2 - Small (Sử dụng cấu hình backbone: small)
+    # --- 3. DINOv2 BASED MODELS ---
     # "DINOv2_Small_CASIA-WebFace": "weights/DINOv2/Small/DINOv2_Small_CASIA-WebFace.pth",
     # "DINOv2_Small_MS1MV2": "weights/DINOv2/Small/DINOv2_Small_MS1MV2.pth",
     # "DINOv2_Small_WebFace4M": "weights/DINOv2/Small/DINOv2_Small_WebFace4M.pth",
     
-    # DINOv2 - Base (Sử dụng cấu hình backbone: base)
     # "DINOv2_Base_CASIA-WebFace": "weights/DINOv2/Base/DINOv2_Base_CASIA-WebFace.pth",
     # "DINOv2_Base_MS1MV2": "weights/DINOv2/Base/DINOv2_Base_MS1MV2.pth",
     # "DINOv2_Base_WebFace4M": "weights/DINOv2/Base/DINOv2_Base_WebFace4M.pth",
@@ -126,7 +124,6 @@ def run_eval_dataset(bin_path, backbone, batch_size, image_size, transform):
         out0 = backbone(img0)
         out1 = backbone(img1)
         
-        # Sửa lỗi AttributeError: Kiểm tra thông minh đầu ra để lấy vector đặc trưng chính xác
         if hasattr(out0, 'pooler_output'):
             out0 = out0.pooler_output
             out1 = out1.pooler_output
@@ -134,7 +131,6 @@ def run_eval_dataset(bin_path, backbone, batch_size, image_size, transform):
         embeddings_list0.append(out0.detach().cpu().numpy())
         embeddings_list1.append(out1.detach().cpu().numpy())
         
-        # IN TIẾN TRÌNH TỪNG BATCH: Cứ sau mỗi 5 batch hoặc batch cuối cùng thì print báo cáo
         if ba % (batch_size * 5) == 0 or ba + batch_size >= num_samples:
             current_processed = min(ba + batch_size, num_samples)
             print(f"      [VRAM Progress] Inference progress: {current_processed}/{num_samples}")
@@ -152,15 +148,12 @@ def run_eval_dataset(bin_path, backbone, batch_size, image_size, transform):
     tpr, fpr, accuracy, val, val_std, far = evaluate(embeddings, loader.issame_list, nrof_folds=10)
     
     acc_flip, std_flip = np.mean(accuracy), np.std(accuracy)
-    
-    # Tính thêm XNorm (Độ dài vector đặc trưng) giống mã nguồn gốc
     xnorm = np.mean(np.linalg.norm(embeddings, axis=1))
     
     del loader, embeddings_list0, embeddings_list1, embeddings0, embeddings1
     import gc
     gc.collect()
     
-    # Trả về toàn bộ các chỉ số thu hoạch được
     return {
         "accuracy": acc_flip,
         "std": std_flip,
@@ -184,12 +177,47 @@ def main():
     os.makedirs(cfg.output, exist_ok=True)
     init_logging(logging.getLogger(), 0, cfg.output, logfile="batch_eval_summary.log")
 
+    # XỬ LÝ FILE CHECKPOINT BAN ĐẦU
+    evaluated_pairs = set()
+    if CONTINUE:
+        if os.path.exists(CHECKPOINT_FILE):
+            print(f"[CHECKPOINT] Loading completed evaluations from {CHECKPOINT_FILE}...")
+            with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        evaluated_pairs.add(line)  # Lưu dạng "Model_Key Dataset_Name"
+            print(f"[CHECKPOINT] Found {len(evaluated_pairs)} pairs already evaluated.")
+        else:
+            print(f"[CHECKPOINT] {CHECKPOINT_FILE} not found. Creating a blank checkpoint file.")
+            with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+                pass
+    else:
+        print(f"[CHECKPOINT] CONTINUE=False. Resetting checkpoint and running from scratch.")
+        with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+            pass # Reset/Ghi đè file rỗng
+
     # VÒNG LẶP CHÍNH: QUÉT QUA CÁC MODEL KHÔNG BỊ COMMENT
     for model_key, model_weight_path in MODELS_TO_EVAL.items():
         if not os.path.exists(model_weight_path):
             print(f"\n[SKIP] Weight file not found for {model_key} at {model_weight_path}")
             continue
             
+        # Kiểm tra xem model này còn dataset nào chưa chạy không trước khi load weights lên GPU
+        datasets_to_run = []
+        for d_name, d_path in DATASETS.items():
+            if not os.path.exists(d_path):
+                continue
+            pair_key = f"{model_key} {d_name}"
+            if pair_key in evaluated_pairs:
+                continue
+            datasets_to_run.append((d_name, d_path))
+
+        # Nếu model này đã chạy xong tất cả các datasets hiện có, bỏ qua luôn model này
+        if not datasets_to_run:
+            print(f"\n[SKIP MODEL] All datasets for {model_key} are already evaluated.")
+            continue
+
         print(f"\n==================================================================")
         print(f"🔥 START EVALUATION FOR MODEL: {model_key}")
         print(f"==================================================================")
@@ -220,12 +248,8 @@ def main():
         model_output_dir = os.path.join(cfg.output, model_key)
         os.makedirs(model_output_dir, exist_ok=True)
 
-        # VÒNG LẶP CON: EVALUATE LẦN LƯỢT TỪNG DATASET TRÊN MODEL HIỆN TẠI
-        for dataset_name, dataset_bin_path in DATASETS.items():
-            if not os.path.exists(dataset_bin_path):
-                print(f"   [WARNING] Dataset {dataset_name} not found, Skipping...")
-                continue
-                
+        # VÒNG LẶP CON: EVALUATE LẦN LƯỢT TỪNG DATASET CHƯA CHẠY
+        for dataset_name, dataset_bin_path in datasets_to_run:
             print(f"   ⚡ Dataset: {dataset_name} ...")
             
             # Khởi chạy hàm đánh giá theo batch tiết kiệm RAM
@@ -247,7 +271,12 @@ def main():
             
             # Đồng thời bắn vào file log tổng hợp hệ thống
             logging.info(f"[{model_key}][{dataset_name}] Acc: {res['accuracy']:.5f} | ValRate: {res['val_rate']:.5f} | XNorm: {res['xnorm']:.5f}")
-            print(f"   ✅ Finished [{dataset_name}] -> Detailed results saved to {result_file_path}")
+            
+            # GHI VÀO FILE CHECKPOINT NGAY LẬP TỨC SAU KHI HOÀN THÀNH 1 CẶP
+            with open(CHECKPOINT_FILE, "a", encoding="utf-8") as f_cp:
+                f_cp.write(f"{model_key} {dataset_name}\n")
+                
+            print(f"   ✅ Finished [{dataset_name}] -> Saved to checkpoint & {result_file_path}")
             
         # Giải phóng triệt để RAM/VRAM của mô hình hiện tại trước khi đổi sang mô hình mới
         del model, backbone_net, state_dict
