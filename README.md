@@ -79,6 +79,11 @@ config.normalize_type = "clip"   # Chuẩn hóa giá trị Mean/Std khớp với
 config.interpolation_type = 3    # Sử dụng thuật toán Bicubic để resize ảnh chất lượng cao
 
 ```
+## 📄 Citation & License
+
+
+This project is a fork based on the research and codebase developed by the **Fraunhofer Institute for Computer Graphics Research IGD Darmstadt**.
+
 ---
 ### Citation
 
