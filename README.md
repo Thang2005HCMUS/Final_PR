@@ -78,3 +78,12 @@ config.batch_size_eval = 32      # Kích thước Batch tối ưu để phù h�
 config.normalize_type = "clip"   # Chuẩn hóa giá trị Mean/Std khớp với phân phối pretrained gốc
 config.interpolation_type = 3    # Sử dụng thuật toán Bicubic để resize ảnh chất lượng cao
 
+```
+---
+
+## License
+
+This project is licensed under the terms of the **Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.  
+Copyright (c) 2021 Fraunhofer Institute for Computer Graphics Research IGD Darmstadt.
+
+For more details, please see the [CC BY-NC-SA 4.0 License Official Text](https://creativecommons.org/licenses/by-nc-sa/4.0/).
