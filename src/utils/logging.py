@@ -10,19 +10,20 @@ from datetime import datetime
 
 def init_logging(log_root, rank, models_root, logfile=None):
     if rank == 0:
-        log_root.setLevel(logging.INFO)
-        formatter = logging.Formatter("Training: %(asctime)s-%(message)s")
-        file_name = "training.log" if logfile is None else logfile
+        # log_root.setLevel(logging.INFO)
+        # formatter = logging.Formatter("Training: %(asctime)s-%(message)s")
+        # file_name = "training.log" if logfile is None else logfile
         
-        handler_file = logging.FileHandler(os.path.join(models_root, file_name))
-        handler_stream = logging.StreamHandler(sys.stdout)
-        handler_file.setFormatter(formatter)
-        handler_stream.setFormatter(formatter)
+        # handler_file = logging.FileHandler(os.path.join(models_root, file_name))
+        # handler_stream = logging.StreamHandler(sys.stdout)
+        # handler_file.setFormatter(formatter)
+        # handler_stream.setFormatter(formatter)
 
-        log_root.addHandler(handler_file)
-        log_root.addHandler(handler_stream)
-        log_root.info('rank_id: %d' % rank)
-        log_root.info('Number of GPUs: %d' %  dist.get_world_size())
+        # log_root.addHandler(handler_file)
+        # log_root.addHandler(handler_stream)
+        # log_root.info('rank_id: %d' % rank)
+        # log_root.info('Number of GPUs: %d' %  dist.get_world_size())
+        log_root.info('Running on Local GPU (Single Process Mode)')
 
 
 class TrainingLogger():

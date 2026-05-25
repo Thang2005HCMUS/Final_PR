@@ -194,11 +194,13 @@ def test(data_set, backbone, model_name, batch_size, nfolds=10):
             time0 = datetime.datetime.now()
             img =  _data.to("cuda")
 
-            if model_name == "dinov2" or model_name == "baseline":
-                net_out: torch.Tensor = backbone(img).pooler_output 
+            
+            outputs = backbone(img)
+            if hasattr(outputs, 'pooler_output'):
+                net_out = outputs.pooler_output
             else:
-                net_out: torch.Tensor = backbone(img)
-
+                net_out = outputs
+            
             _embeddings = net_out.detach().cpu().numpy()
             time_now = datetime.datetime.now()
             diff = time_now - time0

@@ -1,7 +1,7 @@
 from easydict import EasyDict as edict
 
 config = edict()
-config.model_path = None
+config.model_path = "weights/Baseline/Small/Baseline_Small_CASIA-WebFace.pth"
 
 # Model
 config.model_name = "baseline"
@@ -44,4 +44,4 @@ if config.model_name == "dinov2" or config.model_name == "baseline":
 # RFW: "African_test", "Asian_test", "Caucasian_test", "Indian_test"
 config.eval_path = "validation_path"
 config.val_targets = ["lfw", "cfp_fp", "cfp_ff", "agedb_30", "calfw", "cplfw"]
-config.batch_size_eval = 1024
+config.batch_size_eval = 64
