@@ -47,9 +47,9 @@ MODELS_TO_EVAL = {
     # "Baseline_Large_WebFace4M": "weights/Baseline/Large/Baseline_Large_WebFace4M.pth",
 
     # --- 2. CLIP BASED MODELS ---
-    # "CLIP_Base_CASIA-WebFace": "weights/CLIP/Base/CLIP_Base_CASIA-WebFace.pth",
-    # "CLIP_Base_MS1MV2": "weights/CLIP/Base/CLIP_Base_MS1MV2.pth",
-    # "CLIP_Base_WebFace4M": "weights/CLIP/Base/CLIP_Base_WebFace4M.pth",
+    "CLIP_Base_CASIA-WebFace": "weights/CLIP/Base/CLIP_Base_CASIA-WebFace.pth",
+    "CLIP_Base_MS1MV2": "weights/CLIP/Base/CLIP_Base_MS1MV2.pth",
+    "CLIP_Base_WebFace4M": "weights/CLIP/Base/CLIP_Base_WebFace4M.pth",
     
     # "CLIP_Large_CASIA-WebFace": "weights/CLIP/Large/CLIP_Large_CASIA-WebFace.pth",
     # "CLIP_Large_MS1MV2": "weights/CLIP/Large/CLIP_Large_MS1MV2.pth",
@@ -121,8 +121,12 @@ def run_eval_dataset(bin_path, backbone, batch_size, image_size, transform):
         data0, data1 = loader.get_batch(ba, batch_size)
         img0, img1 = data0.to("cuda"), data1.to("cuda")
         
-        out0 = backbone(img0)
-        out1 = backbone(img1)
+        if hasattr(backbone, 'encode_image'):
+            out0 = backbone.encode_image(img0)
+            out1 = backbone.encode_image(img1)
+        else:
+            out0 = backbone(img0)
+            out1 = backbone(img1)
         
         if hasattr(out0, 'pooler_output'):
             out0 = out0.pooler_output
@@ -236,7 +240,22 @@ def main():
 
         # Khởi tạo mô hình tương ứng
         model = get_model(0, **cfg)
-        
+        if "clip" in model_name_lower or "dinov2" in model_name_lower or cfg.use_lora:
+            from finetuning import apply_lora_model
+            print(f"-> Attaching LoRA layers to {cfg.model_name} before loading weights...")
+            apply_lora_model(
+                0, 
+                model, 
+                training_type="image_encoder_only",
+                model_name=cfg.model_name,
+                backbone_size=cfg.backbone_size, 
+                lora_target_modules=['q', 'v'],
+                lora_r=16, 
+                lora_a=16,          # Hãy đổi lại thành 16 cho khớp với config gốc nếu cần
+                lora_dropout=0.25, 
+                device=device, 
+                position="all"
+            )
         # Tải trọng số an toàn lên GPU
         print(f"-> Loading weights from: {model_weight_path}")
         state_dict = torch.load(model_weight_path, map_location=device)
