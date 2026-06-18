@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import mxnet as mx
 
-# Đảm bảo thêm đường dẫn hệ thống để import chuẩn bộ nguồn
+# Ensure system path includes current working directory
 sys.path.append(os.path.join(os.getcwd()))
 
 from config.config_eval import config as cfg
@@ -15,31 +15,58 @@ from backbone import get_model
 from data.transform import transform_image
 
 class FaceRecognitionGUI:
-    # ── màu sắc & font ──────────────────────────────────────────────
-    BG          = "#0F1117"   # nền tối
-    PANEL       = "#1A1D27"   # card
-    BORDER      = "#2A2D3E"   # viền
-    ACCENT      = "#4F8EF7"   # xanh chủ đạo
-    ACCENT2     = "#7C5CFC"   # tím nhấn
+    # ── Colors & Fonts ──────────────────────────────────────────────
+    BG          = "#0F1117"   # Dark background
+    PANEL       = "#1A1D27"   # Card / Panel background
+    BORDER      = "#2A2D3E"   # Border color
+    ACCENT      = "#4F8EF7"   # Main Blue accent
+    ACCENT2     = "#7C5CFC"   # Purple accent for actions
     SUCCESS     = "#2ECC71"
     DANGER      = "#E74C3C"
     TEXT        = "#E8EAF0"
     SUBTEXT     = "#8890A8"
-    FONT_FAMILY = "Roboto"    # Đổi cứng thành Roboto chuẩn trên Linux
+    FONT_FAMILY = "Roboto"    # Standard robust font for Linux X11/Windows
+
+    # ALL 18 MODELS FROM THE PAPER
+    MODELS_MAPPING = {
+        # --- 1. BASELINE MODELS ---
+        "Baseline_Small_CASIA-WebFace": "weights/Baseline/Small/Baseline_Small_CASIA-WebFace.pth",
+        "Baseline_Small_MS1MV2": "weights/Baseline/Small/Baseline_Small_MS1MV2.pth",
+        "Baseline_Small_WebFace4M": "weights/Baseline/Small/Baseline_Small_WebFace4M.pth",
+        "Baseline_Large_CASIA-WebFace": "weights/Baseline/Large/Baseline_Large_CASIA-WebFace.pth",
+        "Baseline_Large_MS1MV2": "weights/Baseline/Large/Baseline_Large_MS1MV2.pth",
+        "Baseline_Large_WebFace4M": "weights/Baseline/Large/Baseline_Large_WebFace4M.pth",
+
+        # --- 2. CLIP BASED MODELS ---
+        "CLIP_Base_CASIA-WebFace": "weights/CLIP/Base/CLIP_Base_CASIA-WebFace.pth",
+        "CLIP_Base_MS1MV2": "weights/CLIP/Base/CLIP_Base_MS1MV2.pth",
+        "CLIP_Base_WebFace4M": "weights/CLIP/Base/CLIP_Base_WebFace4M.pth",
+        "CLIP_Large_CASIA-WebFace": "weights/CLIP/Large/CLIP_Large_CASIA-WebFace.pth",
+        "CLIP_Large_MS1MV2": "weights/CLIP/Large/CLIP_Large_MS1MV2.pth",
+        "CLIP_Large_WebFace4M": "weights/CLIP/Large/CLIP_Large_WebFace4M.pth",
+
+        # --- 3. DINOv2 BASED MODELS ---
+        "DINOv2_Small_CASIA-WebFace": "weights/DINOv2/Small/DINOv2_Small_CASIA-WebFace.pth",
+        "DINOv2_Small_MS1MV2": "weights/DINOv2/Small/DINOv2_Small_MS1MV2.pth",
+        "DINOv2_Small_WebFace4M": "weights/DINOv2/Small/DINOv2_Small_WebFace4M.pth",
+        "DINOv2_Base_CASIA-WebFace": "weights/DINOv2/Base/DINOv2_Base_CASIA-WebFace.pth",
+        "DINOv2_Base_MS1MV2": "weights/DINOv2/Base/DINOv2_Base_MS1MV2.pth",
+        "DINOv2_Base_WebFace4M": "weights/DINOv2/Base/DINOv2_Base_WebFace4M.pth",
+    }
 
     def __init__(self, root):
         self.root = root
         self.root.title("Face Recognition System")
-        self.root.geometry("1050x680")
+        self.root.geometry("1050x700")
         self.root.configure(bg=self.BG)
         self.root.resizable(True, True)
 
-        # Biến lưu đường dẫn giao diện
-        self.selected_model_path = tk.StringVar()
+        # UI Variables
+        self.selected_model_key = tk.StringVar()
         self.selected_db_dir = tk.StringVar()
         self.selected_query_img = tk.StringVar()
 
-        # Cấu hình phần cứng độc lập
+        # Hardware setup
         self.backbone_net = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -48,8 +75,6 @@ class FaceRecognitionGUI:
         self.create_widgets()
 
     def _setup_fonts(self):
-        """Định nghĩa font chính xác dựa trên fc-list của hệ thống Linux"""
-        # Sử dụng 'Roboto' - font tĩnh hiển thị cực đẹp và mượt trên Linux X11
         chosen = "Roboto"
         self.FONT_FAMILY = chosen
 
@@ -80,13 +105,20 @@ class FaceRecognitionGUI:
         style.configure("Sub.TLabel",
             background=PANEL, foreground=SUBTEXT, font=self.f_small)
 
-        # Entry
+        # Entry & Combobox
         style.configure("TEntry",
             fieldbackground="#252836", foreground=TEXT,
             insertcolor=TEXT, borderwidth=1, relief="flat")
         style.map("TEntry", bordercolor=[("focus", ACCENT), ("!focus", BORDER)])
 
-        # Nút chính (Load)
+        style.configure("TCombobox",
+            fieldbackground="#252836", foreground=TEXT,
+            background=PANEL, borderwidth=1, relief="flat")
+        style.map("TCombobox", 
+            fieldbackground=[("readonly", "#252836")],
+            foreground=[("readonly", TEXT)])
+
+        # Main Load button
         style.configure("Accent.TButton",
             background=ACCENT, foreground="#FFFFFF",
             font=self.f_btn, borderwidth=0, padding=(14, 8))
@@ -94,14 +126,14 @@ class FaceRecognitionGUI:
             background=[("active", "#3A7BE8"), ("disabled", "#2A2D3E")],
             foreground=[("disabled", SUBTEXT)])
 
-        # Nút phụ (Browse)
+        # Secondary Browse button
         style.configure("Ghost.TButton",
             background=PANEL, foreground=ACCENT,
             font=self.f_label, borderwidth=1, relief="flat", padding=(10, 6))
         style.map("Ghost.TButton",
             background=[("active", BORDER)])
 
-        # Nút Predict
+        # Inference button
         style.configure("Predict.TButton",
             background=self.ACCENT2, foreground="#FFFFFF",
             font=(self.FONT_FAMILY, 11, "bold"), borderwidth=0, padding=(14, 10))
@@ -109,7 +141,6 @@ class FaceRecognitionGUI:
             background=[("active", "#6A4DE8"), ("disabled", "#2A2D3E")],
             foreground=[("disabled", SUBTEXT)])
 
-    # ── helper: tạo card có border ─────────────────────────────────
     def _card(self, parent, **kw):
         outer = tk.Frame(parent, bg=self.BORDER, bd=0)
         inner = tk.Frame(outer, bg=self.PANEL, bd=0)
@@ -140,24 +171,31 @@ class FaceRecognitionGUI:
         # ── Config card ───────────────────────────────────────────
         cf_outer, cf = self._card(self.root)
         cf_outer.pack(fill="x", padx=18, pady=(14, 6))
-        self._section_title(cf, "Cau hinh He thong")
+        self._section_title(cf, "Configuration")
         grid_frame = tk.Frame(cf, bg=self.PANEL)
         grid_frame.pack(fill="x", padx=4)
-        for row, (lbl, var, cmd) in enumerate([
-            ("Model (.pth):",          self.selected_model_path, self.browse_model),
-            ("Thu vien anh (Gallery):", self.selected_db_dir,    self.browse_db),
-        ]):
-            tk.Label(grid_frame, text=lbl, bg=self.PANEL, fg=self.SUBTEXT,
-                     font=self.f_small).grid(row=row, column=0, sticky="w",
-                                             padx=(8, 4), pady=6)
-            ttk.Entry(grid_frame, textvariable=var, style="TEntry").grid(
-                row=row, column=1, sticky="ew", padx=4)
-            ttk.Button(grid_frame, text="Duyet...", style="Ghost.TButton",
-                       command=cmd).grid(row=row, column=2, padx=(4, 10))
+        
+        # Row 0: Combobox for selecting models
+        tk.Label(grid_frame, text="Select Model:", bg=self.PANEL, fg=self.SUBTEXT,
+                 font=self.f_small).grid(row=0, column=0, sticky="w", padx=(8, 4), pady=6)
+        
+        self.model_combo = ttk.Combobox(grid_frame, textvariable=self.selected_model_key, 
+                                        values=list(self.MODELS_MAPPING.keys()), state="readonly", style="TCombobox")
+        self.model_combo.grid(row=0, column=1, columnspan=2, sticky="ew", padx=4)
+        if list(self.MODELS_MAPPING.keys()):
+            self.model_combo.current(0)
 
-        cf.columnconfigure(1, weight=1)
+        # Row 1: Gallery Directory Selection
+        tk.Label(grid_frame, text="Gallery Directory:", bg=self.PANEL, fg=self.SUBTEXT,
+                 font=self.f_small).grid(row=1, column=0, sticky="w", padx=(8, 4), pady=6)
+        ttk.Entry(grid_frame, textvariable=self.selected_db_dir, style="TEntry").grid(
+            row=1, column=1, sticky="ew", padx=4)
+        ttk.Button(grid_frame, text="Browse...", style="Ghost.TButton",
+                   command=self.browse_db).grid(row=1, column=2, padx=(4, 10))
 
-        ttk.Button(grid_frame, text="NAP MODEL & DATABASE",
+        grid_frame.columnconfigure(1, weight=1)
+
+        ttk.Button(grid_frame, text="INITIALIZE MODEL & GALLERY",
                    style="Accent.TButton",
                    command=self.load_system).grid(
             row=2, column=0, columnspan=3, pady=(8, 14), padx=10, sticky="ew")
@@ -169,12 +207,12 @@ class FaceRecognitionGUI:
         main.columnconfigure(1, weight=1)
         main.rowconfigure(0, weight=1)
 
-        # -- Cột trái: Query Image ---------------------------------
+        # -- Left Column: Query Image ---------------------------------
         lf_outer, lf = self._card(main)
         lf_outer.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        self._section_title(lf, "Anh Can Doan")
+        self._section_title(lf, "Query Input")
 
-        ttk.Button(lf, text="Chon anh...",
+        ttk.Button(lf, text="Select Image...",
                    style="Ghost.TButton",
                    command=self.browse_query_image).pack(anchor="w", padx=8, pady=(0, 8))
 
@@ -182,35 +220,35 @@ class FaceRecognitionGUI:
         img_holder.pack(padx=8, pady=4)
         img_holder.pack_propagate(False)
         self.lbl_query_img = tk.Label(img_holder,
-                                      text="Chua chon anh",
+                                      text="No Image Selected",
                                       bg="#252836", fg=self.SUBTEXT,
                                       font=self.f_small, anchor="center")
         self.lbl_query_img.pack(fill="both", expand=True)
 
-        self.btn_predict = ttk.Button(lf, text="DOAN XEM LA AI?",
+        self.btn_predict = ttk.Button(lf, text="Run Inference",
                                       style="Predict.TButton",
                                       command=self.predict_face,
                                       state="disabled")
         self.btn_predict.pack(fill="x", padx=8, pady=12)
 
-        # -- Cột phải: Result -------------------------------------
+        # -- Right Column: Match Result -------------------------------------
         rf_outer, rf = self._card(main)
         rf_outer.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-        self._section_title(rf, "Ket qua Khop nhat")
+        self._section_title(rf, "Match Result")
 
         self.lbl_result_name = tk.Label(rf,
-            text="Ten nguoi: Chua co",
+            text="Name: Unknown",
             bg=self.PANEL, fg=self.TEXT,
             font=self.f_result, anchor="w")
         self.lbl_result_name.pack(fill="x", padx=10, pady=(0, 4))
 
         self.lbl_result_score = tk.Label(rf,
-            text="Do tuong dong: --",
+            text="Similarity Score: --",
             bg=self.PANEL, fg=self.SUBTEXT,
             font=self.f_score, anchor="w")
         self.lbl_result_score.pack(fill="x", padx=10, pady=(0, 10))
 
-        # Progress bar độ tương đồng
+        # Similarity progress bar
         self.progress_var = tk.DoubleVar(value=0)
         self.progress_bar = ttk.Progressbar(rf, variable=self.progress_var,
                                              maximum=100, length=260)
@@ -220,22 +258,18 @@ class FaceRecognitionGUI:
         match_holder.pack(padx=8, pady=4)
         match_holder.pack_propagate(False)
         self.lbl_matched_img = tk.Label(match_holder,
-                                         text="Anh doi chieu tuong ung",
+                                         text="No Match Target Available",
                                          bg="#252836", fg=self.SUBTEXT,
                                          font=self.f_small, anchor="center")
         self.lbl_matched_img.pack(fill="both", expand=True)
 
         # ── Status bar ────────────────────────────────────────────
-        self.status_var = tk.StringVar(value="San sang.")
+        self.status_var = tk.StringVar(value="System Ready.")
         status_bar = tk.Frame(self.root, bg=self.PANEL, height=26)
         status_bar.pack(fill="x", side="bottom")
         tk.Label(status_bar, textvariable=self.status_var,
                  bg=self.PANEL, fg=self.SUBTEXT,
                  font=self.f_small, anchor="w").pack(side="left", padx=12)
-
-    def browse_model(self):
-        file_path = filedialog.askopenfilename(filetypes=[("PyTorch Weights", "*.pth")])
-        if file_path: self.selected_model_path.set(file_path)
             
     def browse_db(self):
         dir_path = filedialog.askdirectory()
@@ -249,38 +283,47 @@ class FaceRecognitionGUI:
             img_tk = ImageTk.PhotoImage(img)
             self.lbl_query_img.config(image=img_tk, text="")
             self.lbl_query_img.image = img_tk
-            self.status_var.set(f"Anh da chon: {os.path.basename(file_path)}")
+            self.status_var.set(f"Selected Query Image: {os.path.basename(file_path)}")
 
-    # ---------------- BÊ NGUYÊN XI LOGIC NẠP MODEL TỪ EVAL_ALL ----------------
+    # ---------------- BACKBONE LOAD LOGIC ALIGNED WITH EVAL_ALL ----------------
     def load_system(self):
-        model_path = self.selected_model_path.get()
+        model_key = self.selected_model_key.get()
         db_path = self.selected_db_dir.get()
         
-        if not model_path or not db_path:
-            messagebox.showerror("Lỗi", "Vui lòng chọn đầy đủ file Model và thư mục Database ảnh!")
+        if not model_key or not db_path:
+            messagebox.showerror("Error", "Please pick a model configuration and gallery directory!")
+            return
+
+        model_path = self.MODELS_MAPPING.get(model_key)
+        
+        if not os.path.exists(model_path):
+            messagebox.showerror("Error", f"Weight file not found at:\n{model_path}\nPlease verify your weights directory structure.")
             return
             
         try:
-            model_key = os.path.splitext(os.path.basename(model_path))[0]
             model_name_lower = model_key.lower()
             
+            # Setup architectures properties
             if "clip" in model_name_lower:
                 cfg.model_name = "clip"
                 cfg.backbone_size = "ViT-B/16" if "base" in model_name_lower else "ViT-L/14"
+                cfg.image_size = 224
             elif "dinov2" in model_name_lower:
                 cfg.model_name = "dinov2"
                 cfg.backbone_size = "small" if "small" in model_name_lower else "base"
+                cfg.image_size = 224
             else:
                 cfg.model_name = "baseline"
                 cfg.backbone_size = "small" if "small" in model_name_lower else "large"
+                cfg.image_size = 112
             
-            print(f"[GUI] Khởi tạo mô hình: {model_key} trên {self.device}")
+            print(f"[GUI] Initializing framework architecture: {model_key} on {self.device}")
             
             model = get_model(0, **cfg)
             
             if "clip" in model_name_lower or "dinov2" in model_name_lower or cfg.use_lora:
                 from finetuning import apply_lora_model
-                print("-> Attaching LoRA layers to model before loading weights...")
+                print("-> Attaching LoRA layers to model architecture before loading weights...")
                 apply_lora_model(
                     0, 
                     model, 
@@ -295,7 +338,7 @@ class FaceRecognitionGUI:
                     position="all"
                 )
             
-            print(f"-> Loading weights từ: {model_path}")
+            print(f"-> Loading model state dictionary from: {model_path}")
             state_dict = torch.load(model_path, map_location=self.device)
             model.backbone.load_state_dict(state_dict)
             
@@ -322,24 +365,46 @@ class FaceRecognitionGUI:
                     self.gallery_paths.append(full_path)
             
             if not self.gallery_features:
-                raise ValueError("Thư mục database trống hoặc không chứa định dạng ảnh hợp lệ!")
+                raise ValueError("Gallery directory contains no valid image configurations format!")
                 
             self.gallery_features = np.vstack(self.gallery_features)
             
-            msg = f"He thong san sang! Da nap thanh cong {len(self.gallery_names)} nguoi dung."
-            messagebox.showinfo("Thanh cong", msg)
-            self.status_var.set(f"[OK] Da nap {len(self.gallery_names)} anh vao Gallery.")
+            msg = f"System Ready! Successfully loaded {len(self.gallery_names)} profiles with {model_key} backend."
+            messagebox.showinfo("Success", msg)
+            self.status_var.set(f"[OK] Parsed {len(self.gallery_names)} identities into Gallery database.")
             self.btn_predict.config(state="normal")
             
         except Exception as e:
-            messagebox.showerror("Loi Nap He Thong", f"Khong the dong bo cau hinh voi file eval_all:\n{str(e)}")
-            self.status_var.set(f"[LOI] {str(e)[:80]}")
+            messagebox.showerror("Initialization Failure", f"Failed to align setup configuration:\n{str(e)}")
+            print(str(e))
+            self.status_var.set(f"[ERR] {str(e)[:80]}")
 
     def get_image_embedding(self, img_path):
-        """Hàm đọc ảnh và xử lý dữ liệu chuẩn qua MxNet kết hợp Flip Augmentation giống hệt eval_all.py"""
         img_mx_raw = mx.image.imdecode(open(img_path, 'rb').read())
-        if img_mx_raw.shape[1] != cfg.image_size:
-            img_mx_raw = mx.image.resize_short(img_mx_raw, cfg.image_size)
+        model_key = self.selected_model_key.get().lower()
+        
+        # ── TÁCH BIỆT LOGIC XỬ LÝ ───────────────────────────────────
+        if "clip" in model_key or "dinov2" in model_key:
+            # 1. Với dòng Vision Transformer: Bắt buộc ép ảnh vuông tuyệt đối 224x224
+            new_w = cfg.image_size
+            new_h = cfg.image_size
+            img_mx_raw = mx.image.imresize(img_mx_raw, new_w, new_h)
+        else:
+            # 2. Với dòng Baseline CNN: Giữ nguyên logic tính tỉ lệ cạnh ngắn nhất và làm tròn patch hệ số 14
+            h, w, _ = img_mx_raw.shape
+            if h < w:
+                new_h = cfg.image_size
+                new_w = int(w * (cfg.image_size / h))
+            else:
+                new_w = cfg.image_size
+                new_h = int(h * (cfg.image_size / w))
+                
+            new_w = int(round(new_w / 14) * 14)
+            new_h = int(round(new_h / 14) * 14)
+            new_w = max(14, new_w)
+            new_h = max(14, new_h)
+            img_mx_raw = mx.image.imresize(img_mx_raw, new_w, new_h)
+        # ────────────────────────────────────────────────────────────
             
         img_np = img_mx_raw.asnumpy()
         img_transformed = self.transform(img_np)
@@ -373,7 +438,7 @@ class FaceRecognitionGUI:
     def predict_face(self):
         query_path = self.selected_query_img.get()
         if not query_path:
-            messagebox.showwarning("Cảnh báo", "Hãy chọn 1 bức ảnh để dự đoán!")
+            messagebox.showwarning("Warning", "Please choose a query image to compute inference target!")
             return
             
         try:
@@ -389,14 +454,14 @@ class FaceRecognitionGUI:
             self.progress_var.set(percentage)
             
             if best_score < 0.35:
-                self.lbl_result_name.config(text="Ten nguoi: NGUOI LA (Unknown)", fg=self.DANGER)
-                self.lbl_result_score.config(text=f"Do tuong dong cao nhat: {percentage:.2f}%")
-                self.lbl_matched_img.config(image="", text="Khong tim thay khuon mat trong DB")
-                self.status_var.set(f"Ket qua: UNKNOWN (score={best_score:.3f})")
+                self.lbl_result_name.config(text="Name: UNKNOWN PROFILE", fg=self.DANGER)
+                self.lbl_result_score.config(text=f"Highest Similarity : {percentage:.2f}%")
+                self.lbl_matched_img.config(image="", text="No match found above baseline threshold")
+                self.status_var.set(f"Result: UNKNOWN (score={best_score:.3f})")
             else:
-                self.lbl_result_name.config(text=f"Ten nguoi: {best_name}", fg=self.SUCCESS)
-                self.lbl_result_score.config(text=f"Do tuong dong: {percentage:.2f}%")
-                self.status_var.set(f"Ket qua: {best_name}  ({percentage:.1f}%)")
+                self.lbl_result_name.config(text=f"Name: {best_name}", fg=self.SUCCESS)
+                self.lbl_result_score.config(text=f"Similarity : {percentage:.2f}%")
+                self.status_var.set(f"Result: {best_name} ({percentage:.1f}%)")
                 
                 match_img = Image.open(best_img_path).resize((250, 250))
                 match_img_tk = ImageTk.PhotoImage(match_img)
@@ -404,8 +469,8 @@ class FaceRecognitionGUI:
                 self.lbl_matched_img.image = match_img_tk
                 
         except Exception as e:
-            messagebox.showerror("Loi Nhan Dien", f"Xay ra loi trong qua trinh xu ly dac trung hinh anh:\n{str(e)}")
-            self.status_var.set(f"[LOI] {str(e)[:80]}")
+            messagebox.showerror("Inference Failure", f"Error during tensor embedding evaluation phase:\n{str(e)}")
+            self.status_var.set(f"[ERR] {str(e)[:80]}")
 
 if __name__ == "__main__":
     root = tk.Tk()
